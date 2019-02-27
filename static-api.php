@@ -19,6 +19,9 @@ class WP_Static_API {
 
     function __construct() {
         add_action( 'rest_api_init', [ $this, 'register_routes' ] );
+
+        add_action( 'template_redirect', [ $this, 'buffer_start_relative_url' ] );
+        add_action( 'shutdown', [ $this, 'buffer_end_relative_url'] );
     }
 
     public function register_routes() {
@@ -68,6 +71,29 @@ class WP_Static_API {
         }
 
         return rest_ensure_response( $data );
+    }
+
+    function callback_relative_url($buffer) {
+        // Replace normal URLs
+        $home_url = esc_url(home_url('/'));
+        $home_url_relative = wp_make_link_relative($home_url);
+
+        // Replace URLs in inline scripts
+        $home_url_escaped = str_replace('/', '\/', $home_url);
+        $home_url_escaped_relative = str_replace('/', '\/', $home_url_relative);
+
+        $buffer = str_replace($home_url, $home_url_relative, $buffer);
+        $buffer = str_replace($home_url_escaped, $home_url_escaped_relative, $buffer);
+
+        return $buffer;
+    }
+
+    function buffer_start_relative_url() {
+        ob_start( [ $this, 'callback_relative_url' ] );
+    }
+
+    function buffer_end_relative_url() {
+        @ob_end_flush();
     }
 }
 
