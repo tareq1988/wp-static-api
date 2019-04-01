@@ -18,82 +18,20 @@ defined( 'ABSPATH' ) || exit;
 class WP_Static_API {
 
     function __construct() {
-        add_action( 'rest_api_init', [ $this, 'register_routes' ] );
-
-        add_action( 'template_redirect', [ $this, 'buffer_start_relative_url' ] );
-        add_action( 'shutdown', [ $this, 'buffer_end_relative_url'] );
+        $this->includes();
+        $this->instantiate();
     }
 
-    public function register_routes() {
-        register_rest_route( 'static/v1', '/pages', array(
-            'methods' => 'GET',
-            'callback' => [ $this, 'available_routes' ],
-        ) );
+    public function includes() {
+        require_once __DIR__ . '/includes/cleanup.php';
+        require_once __DIR__ . '/includes/relative-url.php';
+        require_once __DIR__ . '/includes/rest-api.php';
     }
 
-    public function available_routes( $data ) {
-        $post_types = [
-            'page', 'post'
-        ];
-        $data = [
-            'count'  => [],
-            'routes' => [],
-        ];
-
-        // accomodation, reviews, outlets, points of interest, special offers, events
-        $posts = (new WP_Query([
-            'post_type'      => $post_types,
-            'post_status'    => ['publish', 'inherit'],
-            'posts_per_page' => -1,
-            'cache_results'  => true
-        ]))->get_posts();
-
-        if ( 'posts' == get_option('show_on_front') ) {
-            $data['routes'][] = [
-                'url' => home_url('/'),
-                'type' => 'homepage'
-            ];
-        }
-
-        if ( $posts ) {
-            foreach ( $posts as $post ) {
-                $data['routes'][] = [
-                    'id'      => $post->ID,
-                    'url'     => get_permalink( $post ),
-                    'type'    => $post->post_type,
-                    'created' => $post->post_date,
-                    'updated' => $post->post_modified
-                ];
-
-                $data['count'][$post->post_type] += 1;
-                $data['count']['total']          += 1;
-            }
-        }
-
-        return rest_ensure_response( $data );
-    }
-
-    function callback_relative_url($buffer) {
-        // Replace normal URLs
-        $home_url = esc_url(home_url('/'));
-        $home_url_relative = wp_make_link_relative($home_url);
-
-        // Replace URLs in inline scripts
-        $home_url_escaped = str_replace('/', '\/', $home_url);
-        $home_url_escaped_relative = str_replace('/', '\/', $home_url_relative);
-
-        $buffer = str_replace($home_url, $home_url_relative, $buffer);
-        $buffer = str_replace($home_url_escaped, $home_url_escaped_relative, $buffer);
-
-        return $buffer;
-    }
-
-    function buffer_start_relative_url() {
-        ob_start( [ $this, 'callback_relative_url' ] );
-    }
-
-    function buffer_end_relative_url() {
-        @ob_end_flush();
+    public function instantiate() {
+        new \WeDevs\Stapi\Cleanup();
+        new \WeDevs\Stapi\Relative();
+        new \WeDevs\Stapi\API();
     }
 }
 
