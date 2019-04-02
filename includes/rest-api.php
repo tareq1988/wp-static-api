@@ -6,30 +6,23 @@ namespace WeDevs\Stapi;
  */
 class API {
 
-    private $count;
-
+    /**
+     * Constructor
+     */
     function __construct() {
         add_action( 'rest_api_init', [ $this, 'register_routes' ] );
     }
 
+    /**
+     * Register API routes
+     *
+     * @return void
+     */
     public function register_routes() {
         register_rest_route( 'static/v1', '/pages', array(
             'methods' => 'GET',
             'callback' => [ $this, 'available_routes' ],
         ) );
-    }
-
-    /**
-     * Get post count
-     *
-     * @return array
-     */
-    public function get_posts_count() {
-        if ( ! $count ) {
-            $this->count = wp_count_posts();
-        }
-
-        return $this->count;
     }
 
     /**
@@ -45,6 +38,11 @@ class API {
         return (int) $count->publish;
     }
 
+    /**
+     * Get URL of the posts page
+     *
+     * @return string|false
+     */
     public function get_posts_page() {
         if ( 'posts' == get_option('show_on_front') ) {
             return home_url( '/' );
@@ -60,6 +58,24 @@ class API {
     }
 
     /**
+     * Get all public post types
+     *
+     * @return array
+     */
+    public function get_post_types() {
+        $post_types = get_post_types( [ 'public' => true ], 'names' );
+        $skipped    = [ 'attachment', 'elementor_library' ];
+
+        foreach ( $skipped as $skip ) {
+            if ( array_key_exists( $skip, $post_types ) ) {
+                unset( $post_types[ $skip ] );
+            }
+        }
+
+        return $post_types;
+    }
+
+    /**
      * Get available routes
      *
      * @param  [type] $data
@@ -67,9 +83,7 @@ class API {
      * @return [type]
      */
     public function available_routes( $data ) {
-        $post_types = get_post_types( [ 'public' => true ], 'names' );
-
-        unset( $post_types['attachment'] );
+        $post_types = $this->get_post_types();
 
         $data = [
             'count'  => [ 'total' => 0 ],
@@ -110,7 +124,21 @@ class API {
         }
 
         if ( $pagination = $this->get_posts_pagination() ) {
-            $data['routes' ] = array_merge( $data['routes'], $pagination );
+            $data['count']['pagination'] = count( $pagination );
+            $data['count']['total']      += $data['count']['pagination'];
+            $data['routes' ]             = array_merge( $data['routes'], $pagination );
+        }
+
+        if ( $archive = $this->get_posttype_archives() ) {
+            $data['count']['archive'] = count( $archive );
+            $data['count']['total']   += $data['count']['archive'];
+            $data['routes']           = array_merge( $data['routes'], $archive );
+        }
+
+        if ( $taxonomies = $this->get_taxonomy_terms() ) {
+            $data['count']['taxonomy'] = count( $taxonomies );
+            $data['count']['total']    += $data['count']['taxonomy'];
+            $data['routes']            = array_merge( $data['routes'], $taxonomies );
         }
 
         return rest_ensure_response( $data );
@@ -153,5 +181,70 @@ class API {
         }
 
         return $pages;
+    }
+
+    /**
+     * Get monthly post type archive links
+     *
+     * @param  string $post_type
+     *
+     * @return array
+     */
+    public function get_posttype_archives( $post_type = 'post' ) {
+        global $wpdb;
+
+        // monthly archive
+        $where        = $wpdb->prepare( "WHERE post_type = %s AND post_status = 'publish'", $post_type );
+        $query        = "SELECT YEAR(post_date) AS `year`, MONTH(post_date) AS `month`, count(ID) as posts FROM $wpdb->posts $where GROUP BY YEAR(post_date), MONTH(post_date) ORDER BY post_date ASC";
+        $key          = md5( $query );
+        $last_changed = wp_cache_get_last_changed( 'posts' );
+        $key          = "wp_get_archives:$key:$last_changed";
+        $links        = [];
+
+        if ( ! $results = wp_cache_get( $key, 'posts' ) ) {
+            $results = $wpdb->get_results( $query );
+            wp_cache_set( $key, $results, 'posts' );
+        }
+
+        if ( $results ) {
+            foreach ( $results as $result ) {
+                $links[] = [
+                    'url'  => get_month_link( $result->year, $result->month ),
+                    'type' => 'archive'
+                ];
+            }
+        }
+
+        return $links;
+    }
+
+    /**
+     * Get all taxonomy terms
+     *
+     * @return array
+     */
+    public function get_taxonomy_terms() {
+        $taxonomies = get_taxonomies( [ 'public' => true ], 'objects' );
+        $links      = [];
+
+        foreach ( $taxonomies as $taxonomy ) {
+            $taxonomy_terms = get_terms( array(
+                'hide_empty' => true,
+                'taxonomy' => $taxonomy->name
+            ) );
+
+            if ( $taxonomy_terms ) {
+                foreach ( $taxonomy_terms as $term ) {
+                    if ( $term->count ) {
+                        $links[] = [
+                            'url' => get_term_link( $term ),
+                            'type' => 'taxonomy'
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $links;
     }
 }
