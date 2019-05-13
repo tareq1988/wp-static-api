@@ -20,9 +20,35 @@ class API {
      */
     public function register_routes() {
         register_rest_route( 'static/v1', '/pages', array(
-            'methods' => 'GET',
-            'callback' => [ $this, 'available_routes' ],
+            'methods'             => \WP_REST_Server::READABLE,
+            'callback'            => [ $this, 'available_routes' ],
+            'permission_callback' => [ $this, 'permission_callback' ]
         ) );
+    }
+
+    /**
+     * Check if this is an authenticated request
+     *
+     * @param  \WP_REST_Request $request
+     *
+     * @return boolean
+     */
+    public function permission_callback( $request ) {
+        if ( ! defined( 'BEDIQ_SITE_KEY' ) ) {
+            return false;
+        }
+
+        $site_key = $request->get_header('X-Site-Key');
+
+        if ( ! $site_key && isset( $_REQUEST['bediq_site_key'] ) ) {
+            $site_key = $_REQUEST['bediq_site_key'];
+        }
+
+        if ( BEDIQ_SITE_KEY == $site_key ) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
